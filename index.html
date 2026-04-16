@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Admission Gap — A methodology for estimating hidden behaviours</title>
+  <meta name="description" content="A new Bayesian method for estimating the true prevalence of behaviours people won't admit on surveys. Validated on 2,113 UK university athletes: self-reports captured 3.4%, the method estimates 13.7%." />
+
+  <!-- Open Graph / social -->
+  <meta property="og:title" content="The Admission Gap" />
+  <meta property="og:description" content="What people admit. What the data reveals. A new Bayesian method for estimating the prevalence of behaviours people won't admit on surveys." />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="The Admission Gap" />
+  <meta name="twitter:description" content="Self-reports captured 3.4%. The method estimates 13.7%. A 4× undercount — hidden in plain sight." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=DM+Sans:opsz,wght@9..40,300..700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <!-- React + Babel from CDN (no build step required) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #f1ebdf; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; color: #141210; -webkit-font-smoothing: antialiased; }
+
+    .font-display { font-family: 'Fraunces', Georgia, serif; font-optical-sizing: auto; font-variation-settings: 'SOFT' 50, 'WONK' 0; }
+    .font-display-wonk { font-family: 'Fraunces', Georgia, serif; font-optical-sizing: auto; font-variation-settings: 'SOFT' 100, 'WONK' 1; }
+    .font-body { font-family: 'DM Sans', system-ui, sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+    .eyebrow { font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.18em; font-size: 11px; font-weight: 500; }
+
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes dotIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    .reveal { opacity: 0; animation: fadeUp 0.9s ease-out forwards; }
+    .reveal-in { opacity: 0; animation: fadeIn 1.2s ease-out forwards; }
+
+    .grain::before {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/><feColorMatrix values='0 0 0 0 0.08  0 0 0 0 0.07  0 0 0 0 0.06  0 0 0 0.22 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      opacity: 0.35; mix-blend-mode: multiply;
+    }
+
+    .link-hover { transition: all 0.2s ease; }
+    .link-hover:hover { background: #141210 !important; color: #f1ebdf !important; }
+
+    /* Loading state */
+    #loader {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: #f1ebdf; z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+    #loader.hidden { opacity: 0; pointer-events: none; }
+    #loader .dot {
+      width: 8px; height: 8px; border-radius: 8px; background: #8e1e1e;
+      margin: 0 4px; animation: pulse 1.4s ease-in-out infinite;
+    }
+    #loader .dot:nth-child(2) { animation-delay: 0.2s; }
+    #loader .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+
+    /* Responsive adjustments */
+    @media (max-width: 900px) {
+      .responsive-grid { grid-template-columns: 1fr !important; }
+      .responsive-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+      .responsive-padding { padding-left: 24px !important; padding-right: 24px !important; }
+    }
+    @media (max-width: 600px) {
+      .responsive-grid-4 { grid-template-columns: 1fr !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loader"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef } = React;
+
+    // Inline SVG icons (replaces lucide-react)
+    const IconArrow = ({ size = 14 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="7" y1="17" x2="17" y2="7" />
+        <polyline points="7 7 17 7 17 17" />
+      </svg>
+    );
+    const IconQuote = ({ size = 20, color }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{ display: 'inline-block' }}>
+        <path d="M7 7h3v3H8c-.55 0-1 .45-1 1v2H5v-4c0-1.65 1.35-3 2-3zm7 0h3v3h-2c-.55 0-1 .45-1 1v2h-2v-4c0-1.65 1.35-3 2-3z" />
+      </svg>
+    );
+
+    const c = {
+      paper: '#f1ebdf', paperDeep: '#e8dfcb', ink: '#141210', inkSoft: '#3a3530',
+      inkMute: '#8a8074', rule: '#c8bea8', crimson: '#8e1e1e', crimsonSoft: '#c97575',
+      ochre: '#a66a2c', slate: '#2a3440',
+    };
+
+    const useInView = (opts = { threshold: 0.2 }) => {
+      const ref = useRef(null);
+      const [inView, setInView] = useState(false);
+      useEffect(() => {
+        if (!ref.current) return;
+        const obs = new IntersectionObserver(([e]) => {
+          if (e.isIntersecting) { setInView(true); obs.disconnect(); }
+        }, opts);
+        obs.observe(ref.current);
+        return () => obs.disconnect();
+      }, []);
+      return [ref, inView];
+    };
+
+    const useCountUp = (target, trigger, dur = 1800) => {
+      const [v, setV] = useState(0);
+      useEffect(() => {
+        if (!trigger) return;
+        let start;
+        const step = (t) => {
+          if (!start) start = t;
+          const p = Math.min((t - start) / dur, 1);
+          const eased = 1 - Math.pow(1 - p, 3);
+          setV(target * eased);
+          if (p < 1) requestAnimationFrame(step);
+        };
+        const r = requestAnimationFrame(step);
+        return () => cancelAnimationFrame(r);
+      }, [target, trigger, dur]);
+      return v;
+    };
+
+    const Hero = () => {
+      const [ref, inView] = useInView({ threshold: 0.1 });
+      const admitted = useCountUp(3.4, inView, 1400);
+      const actual = useCountUp(13.7, inView, 2200);
+      return (
+        <section ref={ref} style={{ background: c.paper, color: c.ink, position: 'relative', overflow: 'hidden' }} className="grain">
+          <div className="responsive-padding" style={{ maxWidth: 1280, margin: '0 auto', padding: '32px 48px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${c.rule}`, paddingBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+              <div className="eyebrow" style={{ color: c.inkSoft }}>Vakhitova et al. · 2026</div>
+              <div className="eyebrow" style={{ color: c.inkSoft }}>Substance Abuse Treatment, Prevention, and Policy</div>
+              <div className="eyebrow" style={{ color: c.inkSoft }}>Vol. 21 · 25</div>
+            </div>
+
+            <div className="responsive-grid" style={{ padding: '96px 0 48px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48 }}>
+              <div>
+                <div className="eyebrow reveal" style={{ color: c.crimson, animationDelay: '0.1s' }}>The Admission Gap</div>
+                <h1 className="font-display reveal" style={{
+                  fontSize: 'clamp(52px, 7vw, 108px)', lineHeight: 0.92, fontWeight: 400,
+                  letterSpacing: '-0.03em', margin: '24px 0 0',
+                  fontVariationSettings: "'SOFT' 50, 'WONK' 0, 'opsz' 144", animationDelay: '0.2s',
+                }}>
+                  What people<br />
+                  <span className="font-display-wonk" style={{ fontStyle: 'italic', fontWeight: 300, color: c.inkMute }}>admit</span>
+                  <span style={{ color: c.inkMute }}>.</span><br />
+                  What the data<br />
+                  <span className="font-display-wonk" style={{ fontStyle: 'italic', fontWeight: 500, color: c.crimson }}>reveals</span>
+                  <span style={{ color: c.crimson }}>.</span>
+                </h1>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 40 }}>
+                <p className="font-body reveal" style={{ fontSize: 20, lineHeight: 1.45, color: c.inkSoft, maxWidth: 480, animationDelay: '0.5s' }}>
+                  A new Bayesian method for estimating the true prevalence of behaviours
+                  people won't admit on surveys — validated on performance-enhancing
+                  drug use among 2,113 UK university athletes.
+                </p>
+
+                <div className="reveal" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 24, alignItems: 'end', animationDelay: '0.7s' }}>
+                  <div>
+                    <div className="eyebrow" style={{ color: c.inkMute, marginBottom: 8 }}>Self-reported</div>
+                    <div className="font-display" style={{ fontSize: 88, lineHeight: 1, fontWeight: 400, color: c.inkMute, letterSpacing: '-0.04em' }}>
+                      {admitted.toFixed(1)}<span style={{ fontSize: 44 }}>%</span>
+                    </div>
+                  </div>
+                  <div style={{ paddingBottom: 20, color: c.crimson }}>
+                    <svg width="48" height="24" viewBox="0 0 48 24">
+                      <path d="M 2 12 L 44 12 M 36 4 L 44 12 L 36 20" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="eyebrow" style={{ color: c.crimson, marginBottom: 8 }}>Actual estimate</div>
+                    <div className="font-display" style={{ fontSize: 88, lineHeight: 1, fontWeight: 500, color: c.crimson, letterSpacing: '-0.04em' }}>
+                      {actual.toFixed(1)}<span style={{ fontSize: 44 }}>%</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="eyebrow reveal" style={{ color: c.inkMute, animationDelay: '0.9s' }}>
+                  A 4× undercount — hidden in plain sight
+                </div>
+              </div>
+            </div>
+
+            <div style={{ borderTop: `1px solid ${c.rule}`, paddingTop: 16, paddingBottom: 32, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }} className="eyebrow">
+              <span style={{ color: c.inkMute }}>↓ Scroll for method</span>
+              <span style={{ color: c.inkMute }}>N = 2,113 athletes · 10 UK universities · 36 sports</span>
+            </div>
+          </div>
+        </section>
+      );
+    };
+
+    const GapViz = () => {
+      const [ref, inView] = useInView({ threshold: 0.15 });
+      const COLS = 50, ROWS = 20;
+      const total = COLS * ROWS;
+      const admittedN = 34, hiddenN = 103;
+      const dots = [];
+      for (let i = 0; i < total; i++) {
+        let kind = 'clean';
+        if (i < admittedN) kind = 'admitted';
+        else if (i < admittedN + hiddenN) kind = 'hidden';
+        dots.push({ i, col: i % COLS, row: Math.floor(i / COLS), kind });
+      }
+      const dotColor = (k) => k === 'admitted' ? c.ink : k === 'hidden' ? c.crimson : c.rule;
+      const dotR = (k) => k === 'clean' ? 2.2 : 3.4;
+
+      return (
+        <section ref={ref} style={{ background: c.paperDeep, color: c.ink, padding: '120px 0', position: 'relative' }} className="grain">
+          <div className="responsive-padding" style={{ maxWidth: 1280, margin: '0 auto', padding: '0 48px' }}>
+            <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 64, alignItems: 'start' }}>
+              <div>
+                <div className="eyebrow" style={{ color: c.crimson, marginBottom: 16 }}>§ 01 · The Gap</div>
+                <h2 className="font-display" style={{ fontSize: 44, fontWeight: 400, lineHeight: 1.02, letterSpacing: '-0.02em', margin: 0 }}>
+                  One<br />thousand<br />
+                  <span className="font-display-wonk" style={{ fontStyle: 'italic', fontWeight: 300 }}>athletes.</span>
+                </h2>
+                <div style={{ marginTop: 32, paddingTop: 16, borderTop: `1px solid ${c.rule}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 10, background: c.ink, display: 'inline-block' }} />
+                    <span className="font-mono" style={{ fontSize: 12, color: c.inkSoft }}>34 · self-reported users</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 10, background: c.crimson, display: 'inline-block' }} />
+                    <span className="font-mono" style={{ fontSize: 12, color: c.inkSoft }}>103 · estimated hidden users</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 10, background: c.rule, display: 'inline-block' }} />
+                    <span className="font-mono" style={{ fontSize: 12, color: c.inkSoft }}>863 · likely non-users</span>
+                  </div>
+                </div>
+                <p className="font-body" style={{ fontSize: 15, lineHeight: 1.55, color: c.inkSoft, marginTop: 32 }}>
+                  Direct questioning captured only the 34 athletes who admitted use. But many more
+                  share the same pattern on everything else the survey asked — their gender, their
+                  belief that doping is necessary, their perception of how widespread it is — while
+                  denying PED use themselves.
+                </p>
+              </div>
+
+              <div style={{ position: 'relative', paddingTop: 8 }}>
+                <svg viewBox={`0 0 ${COLS * 14} ${ROWS * 14}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+                  {dots.map(d => (
+                    <circle key={d.i} cx={d.col * 14 + 7} cy={d.row * 14 + 7} r={dotR(d.kind)} fill={dotColor(d.kind)}
+                      style={{
+                        transformOrigin: `${d.col * 14 + 7}px ${d.row * 14 + 7}px`,
+                        animation: inView ? `dotIn 0.5s cubic-bezier(0.2,0.8,0.2,1) ${d.i * 2.5}ms backwards` : 'none',
+                      }} />
+                  ))}
+                </svg>
+                <div style={{ marginTop: 32, display: 'flex', justifyContent: 'space-between', gap: 48 }}>
+                  <div style={{ flex: 1 }}>
+                    <div className="eyebrow" style={{ color: c.inkMute }}>What the survey saw</div>
+                    <div className="font-display" style={{ fontSize: 56, lineHeight: 1, color: c.ink, letterSpacing: '-0.03em' }}>
+                      34<span style={{ fontSize: 24, color: c.inkMute }}>/1000</span>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, borderLeft: `1px solid ${c.rule}`, paddingLeft: 24 }}>
+                    <div className="eyebrow" style={{ color: c.crimson }}>What the method infers</div>
+                    <div className="font-display" style={{ fontSize: 56, lineHeight: 1, color: c.crimson, letterSpacing: '-0.03em' }}>
+                      137<span style={{ fontSize: 24, color: c.crimsonSoft }}>/1000</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    };
+
+    const profiles = [
+      { n: 1, name: 'Non-users', size: 1208, pct: 65.1, admitted: 1, color: c.inkMute,
+        caption: 'Believe doping is unnecessary. Perceive it as rare. Almost never admit to it.', highlight: false },
+      { n: 2, name: 'Use-admitters', size: 37, pct: 2.0, admitted: 37, color: c.slate,
+        caption: '100% self-reported users. Mostly male. Believe PEDs are necessary. Perceive widespread use.', highlight: false },
+      { n: 3, name: 'Use-admitters & non-admitters', size: 217, pct: 11.7, admitted: 25, color: c.crimson,
+        caption: 'All male. 96% say PEDs are necessary to excel. Attitudes match admitters — but 88% said no.', highlight: true },
+      { n: 4, name: 'Most likely non-users', size: 393, pct: 21.2, admitted: 0, color: c.ochre,
+        caption: 'Higher proportion female. Perceive doping as common in elite sport but don\'t see it as necessary.', highlight: false },
+    ];
+
+    const Profiles = () => {
+      const [ref, inView] = useInView({ threshold: 0.15 });
+      const [hovered, setHovered] = useState(2);
+      const totalN = 1855;
+
+      return (
+        <section ref={ref} style={{ background: c.paper, color: c.ink, padding: '120px 0', position: 'relative' }} className="grain">
+          <div className="responsive-padding" style={{ maxWidth: 1280, margin: '0 auto', padding: '0 48px' }}>
+            <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 64, alignItems: 'end', marginBottom: 64 }}>
+              <div>
+                <div className="eyebrow" style={{ color: c.crimson, marginBottom: 16 }}>§ 02 · Four profiles</div>
+                <h2 className="font-display" style={{ fontSize: 64, fontWeight: 400, lineHeight: 1, letterSpacing: '-0.025em', margin: 0 }}>
+                  Not every<br />non-admitter is a<br />
+                  <span className="font-display-wonk" style={{ fontStyle: 'italic' }}>non-user.</span>
+                </h2>
+              </div>
+              <p className="font-body" style={{ fontSize: 17, lineHeight: 1.55, color: c.inkSoft, margin: 0, maxWidth: 480 }}>
+                Bayesian Profile Regression clusters athletes by attitudes rather than by their answer
+                to the sensitive question. Four groups emerge. One — <strong style={{ color: c.crimson }}>Profile 3</strong> — holds the key.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
+              <span className="eyebrow" style={{ color: c.inkMute }}>N = 1,855 respondents (complete cases)</span>
+              <span className="eyebrow" style={{ color: c.inkMute }}>Hover for detail</span>
+            </div>
+            <div style={{ display: 'flex', width: '100%', height: 96, borderRadius: 2, overflow: 'hidden', border: `1px solid ${c.rule}` }}>
+              {profiles.map((p, idx) => (
+                <div key={p.n} onMouseEnter={() => setHovered(idx)}
+                  style={{
+                    width: `${(p.size / totalN) * 100}%`, background: p.color, position: 'relative',
+                    cursor: 'pointer', transition: 'all 0.3s ease',
+                    opacity: hovered === idx ? 1 : 0.82,
+                    borderRight: idx < 3 ? `1px solid ${c.paper}` : 'none',
+                    animation: inView ? `fadeIn 0.6s ease ${idx * 0.15}s backwards` : 'none',
+                  }}>
+                  <div style={{ position: 'absolute', top: 12, left: 12, color: c.paper, fontSize: 11, letterSpacing: '0.1em', fontWeight: 600, fontFamily: 'JetBrains Mono, monospace' }}>
+                    P{p.n}
+                  </div>
+                  {(p.size / totalN) > 0.04 && (
+                    <div style={{ position: 'absolute', bottom: 12, left: 12, color: c.paper, fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>
+                      {p.pct}%
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="responsive-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginTop: 32 }}>
+              {profiles.map((p, idx) => (
+                <div key={p.n} onMouseEnter={() => setHovered(idx)}
+                  style={{
+                    background: p.highlight ? c.ink : 'transparent',
+                    color: p.highlight ? c.paper : c.ink,
+                    border: `1px solid ${p.highlight ? c.ink : c.rule}`,
+                    padding: 20, cursor: 'pointer', transition: 'all 0.3s ease',
+                    transform: hovered === idx ? 'translateY(-4px)' : 'translateY(0)',
+                    boxShadow: hovered === idx ? `0 8px 24px rgba(20,18,16,0.12)` : 'none',
+                    position: 'relative',
+                  }}>
+                  {p.highlight && (
+                    <div className="eyebrow" style={{ position: 'absolute', top: -10, left: 20, background: c.crimson, color: c.paper, padding: '2px 8px', fontSize: 10 }}>
+                      Key finding
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div className="font-mono" style={{ fontSize: 11, color: p.highlight ? c.crimsonSoft : c.inkMute, letterSpacing: '0.1em' }}>
+                      PROFILE {p.n}
+                    </div>
+                    <div style={{ width: 24, height: 4, background: p.color }} />
+                  </div>
+                  <h3 className="font-display" style={{ fontSize: 22, lineHeight: 1.1, margin: '0 0 16px', fontWeight: 500, letterSpacing: '-0.01em' }}>
+                    {p.name}
+                  </h3>
+                  <div style={{ display: 'flex', gap: 16, marginBottom: 16, paddingBottom: 16, borderBottom: `1px solid ${p.highlight ? c.inkSoft : c.rule}` }}>
+                    <div>
+                      <div className="eyebrow" style={{ color: p.highlight ? c.crimsonSoft : c.inkMute, fontSize: 9 }}>Members</div>
+                      <div className="font-display" style={{ fontSize: 28, fontWeight: 400, lineHeight: 1 }}>{p.size}</div>
+                    </div>
+                    <div>
+                      <div className="eyebrow" style={{ color: p.highlight ? c.crimsonSoft : c.inkMute, fontSize: 9 }}>Admitted</div>
+                      <div className="font-display" style={{ fontSize: 28, fontWeight: 400, lineHeight: 1, color: p.highlight ? c.crimsonSoft : c.inkSoft }}>{p.admitted}</div>
+                    </div>
+                  </div>
+                  <p className="font-body" style={{ fontSize: 13, lineHeight: 1.5, color: p.highlight ? c.paper : c.inkSoft, margin: 0 }}>
+                    {p.caption}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 80, display: 'grid', gridTemplateColumns: '64px 1fr 64px', gap: 24, alignItems: 'center' }}>
+              <div style={{ height: 1, background: c.rule }} />
+              <div style={{ textAlign: 'center' }}>
+                <IconQuote size={20} color={c.crimson} />
+                <p className="font-display" style={{
+                  fontSize: 'clamp(24px, 2.6vw, 34px)', lineHeight: 1.25, fontWeight: 400,
+                  fontStyle: 'italic', margin: '16px 0 0', letterSpacing: '-0.01em', color: c.ink,
+                }}>
+                  Profile 3 shares the attitudinal fingerprint of confirmed users —<br />
+                  but only <span style={{ fontStyle: 'normal', fontWeight: 500 }}>11.5%</span> said yes. The other <span style={{ fontStyle: 'normal', fontWeight: 500, color: c.crimson }}>192</span> said no.
+                </p>
+                <div className="eyebrow" style={{ color: c.inkMute, marginTop: 16 }}>
+                  Gower's distance to Profile 2 · 0.561
+                </div>
+              </div>
+              <div style={{ height: 1, background: c.rule }} />
+            </div>
+          </div>
+        </section>
+      );
+    };
+
+    const stages = [
+      { label: 'Baseline (female, no indicators)', male: 0.15, female: 0.15 },
+      { label: '+ Male', male: 1.20, female: 0.15 },
+      { label: '+ Believes PEDs necessary to excel', male: 6.01, female: 0.81 },
+      { label: '+ Top-quartile perception: elite athletes', male: 15.70, female: 2.33 },
+      { label: '+ Top-quartile perception: sportspeople', male: 35.59, female: 6.60 },
+    ];
+
+    const RiskFactors = () => {
+      const [ref, inView] = useInView({ threshold: 0.2 });
+      const [activeStage, setActiveStage] = useState(4);
+      const maxVal = 40;
+
+      return (
+        <section ref={ref} style={{ background: c.ink, color: c.paper, padding: '120px 0', position: 'relative' }}>
+          <div className="responsive-padding" style={{ maxWidth: 1280, margin: '0 auto', padding: '0 48px' }}>
+            <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 64, marginBottom: 72 }}>
+              <div>
+                <div className="eyebrow" style={{ color: c.crimsonSoft, marginBottom: 16 }}>§ 03 · Risk factors</div>
+                <h2 className="font-display" style={{ fontSize: 64, fontWeight: 400, lineHeight: 1, letterSpacing: '-0.025em', margin: 0 }}>
+                  Four signals.<br />
+                  <span className="font-display-wonk" style={{ fontStyle: 'italic', color: c.crimsonSoft }}>Compounding.</span>
+                </h2>
+              </div>
+              <p className="font-body" style={{ fontSize: 17, lineHeight: 1.55, color: '#c8bea8', margin: 0, maxWidth: 460, alignSelf: 'end' }}>
+                Bayesian Variable Selection isolated four factors with &gt;70% inclusion probability.
+                Their effects multiply. A male athlete who checks every box is <strong style={{ color: c.paper }}>237×</strong> more
+                likely to use PEDs than a baseline female.
+              </p>
+            </div>
+
+            <div>
+              <div className="eyebrow" style={{ color: c.inkMute, marginBottom: 24 }}>Probability of PED use (%) · Hover a stage</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 2 }}>
+                {stages.map((s, idx) => {
+                  const active = idx === activeStage;
+                  const val = s.male;
+                  const pct = (val / maxVal) * 100;
+                  return (
+                    <div key={idx} onMouseEnter={() => setActiveStage(idx)}
+                      style={{
+                        display: 'grid', gridTemplateColumns: '480px 1fr 80px', gap: 24, alignItems: 'center',
+                        padding: '18px 0', borderBottom: `1px solid ${active ? c.crimsonSoft : '#2a2622'}`,
+                        cursor: 'pointer', transition: 'all 0.3s ease', opacity: active ? 1 : 0.55,
+                      }}>
+                      <div style={{ display: 'flex', gap: 16, alignItems: 'baseline' }}>
+                        <span className="font-mono" style={{ fontSize: 11, color: c.inkMute, minWidth: 20 }}>
+                          {String(idx).padStart(2, '0')}
+                        </span>
+                        <span className="font-body" style={{ fontSize: 15, color: active ? c.paper : '#8a8074' }}>
+                          {s.label}
+                        </span>
+                      </div>
+                      <div style={{ position: 'relative', height: 36 }}>
+                        <div style={{
+                          position: 'absolute', left: 0, top: 0, bottom: 0,
+                          width: inView ? `${pct}%` : '0%',
+                          background: active ? c.crimson : '#2a2622',
+                          transition: `width 1.2s cubic-bezier(0.2,0.8,0.2,1) ${idx * 0.2}s, background 0.3s`,
+                        }} />
+                        <div style={{
+                          position: 'absolute', left: inView ? `${(s.female / maxVal) * 100}%` : '0%',
+                          top: '50%', transform: 'translate(-50%, -50%)',
+                          width: 8, height: 8, borderRadius: 8, background: c.paper,
+                          transition: `left 1.2s cubic-bezier(0.2,0.8,0.2,1) ${idx * 0.2}s`,
+                        }} />
+                      </div>
+                      <div className="font-display" style={{
+                        fontSize: 24, textAlign: 'right',
+                        color: active ? c.crimsonSoft : '#5a5650',
+                        fontVariationSettings: "'opsz' 144", letterSpacing: '-0.02em',
+                      }}>
+                        {val.toFixed(1)}%
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: 'flex', gap: 32, marginTop: 24, justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 16, height: 6, background: c.crimson }} />
+                  <span className="font-mono" style={{ fontSize: 11, color: c.inkMute }}>MALE PROBABILITY</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 8, background: c.paper }} />
+                  <span className="font-mono" style={{ fontSize: 11, color: c.inkMute }}>FEMALE PROBABILITY</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="responsive-grid-4" style={{ marginTop: 72, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+              {[
+                { label: 'Gender (male)', prob: 0.998, lit: 'Consistent with prior literature on male-skewed PED use.' },
+                { label: 'Belief: must dope to excel', prob: 0.998, lit: 'False consensus — rationalises own behaviour as necessary.' },
+                { label: 'Perceived elite use (top quartile)', prob: 0.748, lit: 'Projecting own behaviour onto elite athletes.' },
+                { label: 'Perceived general use (top quartile)', prob: 0.742, lit: 'Projecting own behaviour onto the wider sport.' },
+              ].map((f, i) => (
+                <div key={i} style={{ borderTop: `1px solid #3a3530`, paddingTop: 16 }}>
+                  <div className="eyebrow" style={{ color: c.crimsonSoft, marginBottom: 8 }}>
+                    P(β≠0) · {f.prob.toFixed(3)}
+                  </div>
+                  <h4 className="font-display" style={{ fontSize: 20, lineHeight: 1.2, margin: '0 0 12px', fontWeight: 500 }}>
+                    {f.label}
+                  </h4>
+                  <p className="font-body" style={{ fontSize: 13, lineHeight: 1.5, color: '#a8a090', margin: 0 }}>
+                    {f.lit}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    };
+
+    const domains = [
+      { n: '01', field: 'Tax evasion', q: 'Survey-based estimates of undeclared income', why: 'High fear of repercussion; attitudinal proxies readily available.' },
+      { n: '02', field: 'Academic misconduct', q: 'Self-reported plagiarism and contract cheating', why: 'Identity-protective lying is well-documented in the literature.' },
+      { n: '03', field: 'Workplace harassment', q: 'Anonymous climate surveys', why: 'Under-reporting even when anonymised; normative beliefs predictive.' },
+      { n: '04', field: 'Illicit drug use', q: 'Population-level prevalence surveys', why: 'Legal risk plus stigma; perception-of-others is a known proxy.' },
+      { n: '05', field: 'Intimate partner violence', q: 'Victimisation and perpetration reporting', why: 'Severe under-disclosure; attitudinal scales are already validated.' },
+      { n: '06', field: 'Vaccination status', q: 'Self-reported compliance in politicised contexts', why: 'Social-desirability direction reverses by group — method still applies.' },
+      { n: '07', field: 'Insurance fraud', q: 'Claims accuracy self-reports', why: 'Direct legal exposure; strong candidate for attitudinal inference.' },
+      { n: '08', field: 'Eating disorders', q: 'Disordered behaviour prevalence', why: 'Shame-driven concealment; behavioural proxies are well-studied.' },
+    ];
+
+    const Beyond = () => {
+      const [ref, inView] = useInView({ threshold: 0.1 });
+      return (
+        <section ref={ref} style={{ background: c.paper, color: c.ink, padding: '120px 0', position: 'relative' }} className="grain">
+          <div className="responsive-padding" style={{ maxWidth: 1280, margin: '0 auto', padding: '0 48px' }}>
+            <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 64, marginBottom: 72 }}>
+              <div>
+                <div className="eyebrow" style={{ color: c.crimson, marginBottom: 16 }}>§ 04 · Generalisation</div>
+                <h2 className="font-display" style={{ fontSize: 64, fontWeight: 400, lineHeight: 1, letterSpacing: '-0.025em', margin: 0 }}>
+                  Doping is the<br />case study.<br />
+                  <span className="font-display-wonk" style={{ fontStyle: 'italic', color: c.crimson }}>Not the point.</span>
+                </h2>
+              </div>
+              <p className="font-body" style={{ fontSize: 17, lineHeight: 1.55, color: c.inkSoft, margin: 0, maxWidth: 480, alignSelf: 'end' }}>
+                The method is likely to be useful for many sensitive behaviours with (a) directional
+                social-desirability bias and (b) available attitudinal or demographic correlates. That
+                covers much of the literature on concealed conduct.
+              </p>
+            </div>
+
+            <div className="responsive-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: c.rule, border: `1px solid ${c.rule}` }}>
+              {domains.map((d, i) => (
+                <div key={i}
+                  style={{
+                    background: c.paper, padding: 28, minHeight: 220,
+                    display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                    transition: 'background 0.2s', cursor: 'default',
+                    animation: inView ? `fadeUp 0.6s ease ${i * 0.08}s backwards` : 'none',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = c.paperDeep}
+                  onMouseLeave={(e) => e.currentTarget.style.background = c.paper}>
+                  <div>
+                    <div className="font-mono" style={{ fontSize: 11, color: c.crimson, marginBottom: 12, letterSpacing: '0.1em' }}>
+                      DOMAIN / {d.n}
+                    </div>
+                    <h4 className="font-display" style={{ fontSize: 22, fontWeight: 500, margin: '0 0 8px', letterSpacing: '-0.01em', lineHeight: 1.1 }}>
+                      {d.field}
+                    </h4>
+                    <p className="font-body" style={{ fontSize: 13, color: c.inkSoft, margin: 0, fontStyle: 'italic' }}>
+                      {d.q}
+                    </p>
+                  </div>
+                  <p className="font-body" style={{ fontSize: 12, lineHeight: 1.5, color: c.inkMute, margin: 0, marginTop: 24 }}>
+                    {d.why}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 32, textAlign: 'center' }}>
+              <p className="font-body" style={{ fontSize: 13, color: c.inkMute, margin: 0, fontStyle: 'italic' }}>
+                If you study concealed behaviour, this is a tool for your toolkit.
+              </p>
+            </div>
+          </div>
+        </section>
+      );
+    };
+
+    const Citation = () => (
+      <section style={{ background: c.ink, color: c.paper, padding: '96px 0 48px', position: 'relative' }}>
+        <div className="responsive-padding" style={{ maxWidth: 1280, margin: '0 auto', padding: '0 48px' }}>
+          <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 64, alignItems: 'start', paddingBottom: 64, borderBottom: `1px solid #3a3530` }}>
+            <div>
+              <div className="eyebrow" style={{ color: c.crimsonSoft, marginBottom: 24 }}>§ read the paper</div>
+              <h3 className="font-display" style={{ fontSize: 36, lineHeight: 1.1, fontWeight: 400, letterSpacing: '-0.02em', margin: 0, marginBottom: 24 }}>
+                Performance-enhancing drug use in sports: a Bayesian variable selection and profile regression approach to identifying risk factors and estimating prevalence.
+              </h3>
+              <p className="font-body" style={{ fontSize: 14, color: '#a8a090', lineHeight: 1.6, margin: 0 }}>
+                Vakhitova, Z., Mezzetti, C., Alston-Knox, C., Jowett, S., Rhind, D., Lin, C.-Y., Huang, P.-C., Vergani, M., &amp; O'Brien, K. (2026).<br />
+                <em>Substance Abuse Treatment, Prevention, and Policy</em>, 21:25. Open Access.
+              </p>
+              <a href="https://doi.org/10.1186/s13011-025-00699-x" target="_blank" rel="noreferrer" className="link-hover"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 32,
+                  padding: '12px 20px', border: `1px solid ${c.paper}`, color: c.paper,
+                  textDecoration: 'none', fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase',
+                }}>
+                Read on BMC · doi.org/10.1186/s13011-025-00699-x <IconArrow />
+              </a>
+            </div>
+
+            <div>
+              <div className="eyebrow" style={{ color: c.crimsonSoft, marginBottom: 16 }}>Key numbers</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {[['2,113', 'athletes surveyed'], ['10', 'UK universities'], ['4', 'factors identified'], ['4', 'latent profiles'], ['4×', 'undercount corrected']].map(([v, l], i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderBottom: `1px solid #2a2622`, paddingBottom: 12 }}>
+                    <span className="font-display" style={{ fontSize: 32, fontWeight: 400, letterSpacing: '-0.02em' }}>{v}</span>
+                    <span className="font-mono" style={{ fontSize: 11, color: '#8a8074', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{l}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 32, flexWrap: 'wrap', gap: 8 }} className="eyebrow">
+            <span style={{ color: c.inkMute }}>The Admission Gap · Dashboard</span>
+            <span style={{ color: c.inkMute }}>CC BY-NC-ND 4.0</span>
+          </div>
+        </div>
+      </section>
+    );
+
+    const Dashboard = () => (
+      <div style={{ background: c.paper, minHeight: '100vh' }}>
+        <Hero /><GapViz /><Profiles /><RiskFactors /><Beyond /><Citation />
+      </div>
+    );
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Dashboard />);
+
+    // Hide loader once React has mounted
+    setTimeout(() => {
+      const loader = document.getElementById('loader');
+      if (loader) loader.classList.add('hidden');
+      setTimeout(() => loader && loader.remove(), 500);
+    }, 100);
+  </script>
+</body>
+</html>
